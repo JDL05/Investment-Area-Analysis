@@ -161,7 +161,7 @@ filtered_funding = (
 )
 
 # Title
-st.title("TVF Territory (Smaller Font Tiles)")
+st.title("TVF Territory")
 
 #####################################################################
 #                    TERRITORY DASHBOARD SECTIONS                   #
