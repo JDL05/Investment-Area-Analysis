@@ -343,7 +343,7 @@ st.write("---")
 #        FUNDING TREND ANALYSIS (SCATTER & LINE CHARTS)                       #
 ################################################################################
 
-st.subheader("Funding Trend Analysis")
+st.subheader("Funding Trend Analysis (Seed & Early")
 
 col_scatter, col_line = st.columns(2)
 
