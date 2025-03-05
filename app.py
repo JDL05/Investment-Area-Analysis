@@ -4,6 +4,7 @@ import os
 import matplotlib.pyplot as plt
 import seaborn as sns
 from collections import Counter, defaultdict
+import matplotlib.ticker as mticker  # For custom y-axis formatting in millions
 
 # ---- PAGE CONFIG: FULL WIDTH ----
 st.set_page_config(layout="wide", page_title="TVF Territory Dashboard")
@@ -83,7 +84,7 @@ def load_funding_data() -> pd.DataFrame:
         df = df.dropna(subset=["Announced Date"])
         df["Year Announced"] = df["Announced Date"].dt.year
 
-    # "Money Raised" -> float
+    # Convert "Money Raised" to float
     if "Money Raised" in df.columns:
         df["Money Raised"] = (
             df["Money Raised"]
@@ -94,7 +95,7 @@ def load_funding_data() -> pd.DataFrame:
     else:
         df["Money Raised"] = float("nan")
 
-    # Make sure there's a column called "Funding Stage" for your data
+    # Ensure "Funding Stage" column exists
     if "Funding Stage" not in df.columns:
         df["Funding Stage"] = "Unknown"
 
@@ -119,8 +120,10 @@ def load_funding_data() -> pd.DataFrame:
 #                           MAIN LOGIC                              #
 #####################################################################
 
-# A single variable to adjust the annotation font size everywhere:
-ANNOTATION_FONTSIZE = 6  # <- Change this value to control the size of the numbers on all charts
+# ============ Font-size Controls ============
+ANNOTATION_FONTSIZE = 7  # numeric labels inside bars
+AXIS_LABEL_FONTSIZE = 6  # x/y axis label font size
+TICK_LABEL_FONTSIZE = 6  # x/y axis tick label font size
 
 # Merge and load territory data
 merged_territory_file = merge_territory_files()
@@ -144,7 +147,7 @@ min_year = int(min(combined_years))
 max_year = int(max(combined_years))
 
 # Sidebar slider
-st.sidebar.title("Select Year Range (Unified Filter)")
+st.sidebar.title("Select Year Range")
 selected_year_range = st.sidebar.slider(
     "Choose a range of years",
     min_value=min_year,
@@ -157,10 +160,10 @@ filtered_territory = territory_df[
     territory_df["Year Founded"].between(selected_year_range[0], selected_year_range[1])
 ]
 
-# 2) Filter funding data by year AND by Funding Stage in ["Seed", "Early Stage Funding"]
+# 2) Filter funding data by year + stage
 filtered_funding = funding_df[
-    (funding_df["Year Announced"].between(selected_year_range[0], selected_year_range[1])) &
-    (funding_df["Funding Stage"].isin(["Seed", "Early Stage Funding"]))
+    (funding_df["Year Announced"].between(selected_year_range[0], selected_year_range[1]))
+    & (funding_df["Funding Stage"].isin(["Seed", "Early Stage Funding"]))
     ]
 
 # Title
@@ -172,7 +175,7 @@ st.title("TVF Territory")
 
 st.subheader("Territory Data")
 
-# --- METRIC TILES (COLORFUL) ---
+# --- METRIC TILES ---
 total_companies = filtered_territory.shape[0]
 
 # Companies in Aachen
@@ -186,20 +189,25 @@ if "Headquarters Location" in filtered_territory.columns:
 else:
     aachen_count = 0
 
-# Most common Industry Group
+# Safely determine most common Industry Group
 if "Industry Groups" in filtered_territory.columns and not filtered_territory.empty:
     industry_series = filtered_territory["Industry Groups"].dropna().astype(str)
     all_groups = []
     for line in industry_series:
         all_groups.extend([grp.strip() for grp in line.split(",")])
+
     if all_groups:
-        most_common_group, _ = Counter(all_groups).most_common(1)[0]
+        top_item = Counter(all_groups).most_common(1)
+        if top_item:
+            most_common_group = top_item[0][0]
+        else:
+            most_common_group = "N/A"
     else:
         most_common_group = "N/A"
 else:
     most_common_group = "N/A"
 
-# Companies with Funding (simply checking if "Funding Status" has data)
+# Companies with Funding
 if "Funding Status" in filtered_territory.columns and not filtered_territory.empty:
     has_funding_count = filtered_territory["Funding Status"].dropna().shape[0]
 else:
@@ -209,8 +217,7 @@ tile_colors = ["#822723", "#822723", "#822723", "#822723"]
 
 def colored_tile(column, label, value, bg_color):
     """
-    Renders a colorful 'tile' in the given column using custom HTML,
-    but with smaller font sizes.
+    Renders a tile using HTML with smaller fonts.
     """
     column.markdown(f"""
     <div style="background-color:{bg_color}; padding:10px; border-radius:10px; text-align:center;">
@@ -221,18 +228,18 @@ def colored_tile(column, label, value, bg_color):
 
 col1, col2, col3, col4 = st.columns(4)
 colored_tile(col1, "Total Companies", f"{total_companies}", tile_colors[0])
-colored_tile(col2, "Companies in Aachen", f"{aachen_count}", tile_colors[1])
-colored_tile(col3, "Most Common Industry Group", f"{most_common_group}", tile_colors[2])
-colored_tile(col4, "Companies with Funding", f"{has_funding_count}", tile_colors[3])
+colored_tile(col2, "Aachen Companies", f"{aachen_count}", tile_colors[1])
+colored_tile(col3, "Top Industry", f"{most_common_group}", tile_colors[2])
+colored_tile(col4, "Companies w/ Funding", f"{has_funding_count}", tile_colors[3])
 
 st.write("---")
 
 # Territory Charts
 col_left, col_right = st.columns(2)
 
-col_left.subheader("Number of Startups Founded (Per Year)")
+col_left.subheader("Startups by Year")
 if filtered_territory.empty:
-    col_left.warning("No territory data in the selected year range.")
+    col_left.warning("No territory data in range.")
 else:
     year_counts = filtered_territory["Year Founded"].value_counts().sort_index()
     if year_counts.empty:
@@ -248,6 +255,7 @@ else:
             edgecolor="black",
             ax=ax
         )
+        # Numeric labels
         for i, row in data_for_plot.iterrows():
             ax.text(
                 i,
@@ -256,17 +264,18 @@ else:
                 ha="center",
                 va="bottom",
                 color="black",
-                fontsize=ANNOTATION_FONTSIZE  # <--- Here is where we use the variable
+                fontsize=ANNOTATION_FONTSIZE
             )
-        ax.set_title(f"({selected_year_range[0]} - {selected_year_range[1]})", fontsize=12)
-        ax.set_xlabel("Year Founded", fontsize=10)
-        ax.set_ylabel("Number of Companies", fontsize=10)
+
+        ax.set_xlabel("Year Founded", fontsize=AXIS_LABEL_FONTSIZE)
+        ax.set_ylabel("Count", fontsize=AXIS_LABEL_FONTSIZE)
+        ax.tick_params(axis='both', labelsize=TICK_LABEL_FONTSIZE)
         ax.set_ylim(0, data_for_plot["Count"].max() * 1.1)
         col_left.pyplot(fig)
 
-col_right.subheader("Top 10 Industries")
+col_right.subheader("Top Industries")
 if "Industry Groups" not in filtered_territory.columns or filtered_territory.empty:
-    col_right.warning("No industry data in the selected range.")
+    col_right.warning("No industry data in range.")
 else:
     industry_series = filtered_territory["Industry Groups"].dropna().astype(str)
     all_groups = []
@@ -286,6 +295,7 @@ else:
             edgecolor="black",
             ax=ax2
         )
+        # Numeric labels
         for i, row in top10_df.iterrows():
             ax2.text(
                 row["Count"] + 0.3,
@@ -293,11 +303,12 @@ else:
                 str(int(row["Count"])),
                 va="center",
                 color="black",
-                fontsize=ANNOTATION_FONTSIZE  # <--- Using the variable again
+                fontsize=ANNOTATION_FONTSIZE
             )
-        ax2.set_title("Most Frequent Industries", fontsize=12)
-        ax2.set_xlabel("Count", fontsize=10)
-        ax2.set_ylabel("")
+
+        ax2.set_xlabel("Count", fontsize=AXIS_LABEL_FONTSIZE)
+        ax2.set_ylabel("", fontsize=AXIS_LABEL_FONTSIZE)
+        ax2.tick_params(axis='both', labelsize=TICK_LABEL_FONTSIZE)
         ax2.set_ylim(-0.5, len(top10_df) - 0.5)
         col_right.pyplot(fig2)
 
@@ -307,13 +318,12 @@ st.write("---")
 #                     FUNDING ROUNDS DASHBOARD                      #
 #####################################################################
 
-st.subheader("Funding Rounds Data (Only Seed & Early Stage Funding)")
+st.subheader("Funding Rounds (Seed & Early)")
 
-# If filtered_funding is empty, it means no deals match year + Funding Stage filters
 if filtered_funding.empty:
-    st.warning("No Seed/Early Stage funding rounds in the selected year range.")
+    st.warning("No seed/early rounds in range.")
 else:
-    # 1) Basic Tiles
+    # Basic tiles
     total_rounds = filtered_funding.shape[0]
 
     # Average Round Size
@@ -323,8 +333,7 @@ else:
     else:
         avg_money_str = "0 EUR"
 
-    # Because we only have "Seed" and "Early Stage Funding" in this subset,
-    # the "Most Common Funding Stage" will just be one or the other, or might tie.
+    # Most Common Stage
     if "Funding Stage" in filtered_funding.columns and not filtered_funding["Funding Stage"].dropna().empty:
         top_stage = filtered_funding["Funding Stage"].value_counts().index[0]
     else:
@@ -332,30 +341,22 @@ else:
 
     funding_tile_colors = ["#822723", "#822723", "#822723"]
 
-    colA, colB, colC = st.columns([1, 1, 1])
+    colA, colB, colC = st.columns(3)
 
-    def colored_tile(column, label, value, bg_color):
-        column.markdown(f"""
-        <div style="background-color:{bg_color}; padding:10px; border-radius:10px; text-align:center;">
-            <h4 style="color:white; margin:0; font-size:14px;">{label}</h4>
-            <p style="color:white; font-size:18px; font-weight:bold; margin:0;">{value}</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    colored_tile(colA, "Total Funding Rounds", total_rounds, funding_tile_colors[0])
-    colored_tile(colB, "Average Round Size", avg_money_str, funding_tile_colors[1])
-    colored_tile(colC, "Most Common Stage", top_stage, funding_tile_colors[2])
+    colored_tile(colA, "Total Rounds", total_rounds, funding_tile_colors[0])
+    colored_tile(colB, "Avg Round Size", avg_money_str, funding_tile_colors[1])
+    colored_tile(colC, "Top Stage", top_stage, funding_tile_colors[2])
 
     st.write("---")
 
-    # 2) Funding Rounds by Year
+    # Rounds by Year
     left_fr, right_fr = st.columns(2)
-    left_fr.write("#### Rounds by Year")
+    left_fr.subheader("Rounds by Year")
 
     if "Year Announced" in filtered_funding.columns:
         year_counts_fr = filtered_funding["Year Announced"].value_counts().sort_index()
         if year_counts_fr.empty:
-            left_fr.warning("No valid 'Year Announced' data in this range.")
+            left_fr.warning("No 'Year Announced' in range.")
         else:
             data_fr_plot = pd.DataFrame({"Year": year_counts_fr.index, "Rounds": year_counts_fr.values})
             fig_fr, ax_fr = plt.subplots(figsize=(5, 4))
@@ -375,22 +376,23 @@ else:
                     ha="center",
                     va="bottom",
                     color="black",
-                    fontsize=ANNOTATION_FONTSIZE  # <--- Using the variable
+                    fontsize=ANNOTATION_FONTSIZE
                 )
-            ax_fr.set_title(f"Rounds by Year ({selected_year_range[0]} - {selected_year_range[1]})", fontsize=11)
-            ax_fr.set_xlabel("Year Announced", fontsize=9)
-            ax_fr.set_ylabel("Number of Rounds", fontsize=9)
+
+            ax_fr.set_xlabel("Year", fontsize=AXIS_LABEL_FONTSIZE)
+            ax_fr.set_ylabel("Rounds", fontsize=AXIS_LABEL_FONTSIZE)
+            ax_fr.tick_params(axis='both', labelsize=TICK_LABEL_FONTSIZE)
             ax_fr.set_ylim(0, data_fr_plot["Rounds"].max() * 1.1)
             left_fr.pyplot(fig_fr)
     else:
-        left_fr.warning("No 'Year Announced' column found in the data.")
+        left_fr.warning("No 'Year Announced' column found.")
 
-    # 3) Sum of Money Raised by Year (still only Seed/Early Stage)
-    right_fr.write("#### Total Money Raised by Year")
+    # Money by Year (DISPLAY IN MILLIONS)
+    right_fr.subheader("Investments by Year")
     if "Year Announced" in filtered_funding.columns:
         sum_by_year = filtered_funding.groupby("Year Announced")["Money Raised"].sum().sort_index()
         if sum_by_year.empty:
-            right_fr.warning("No valid 'Money Raised' data in this range.")
+            right_fr.warning("No 'Money Raised' in range.")
         else:
             fig_sum, ax_sum = plt.subplots(figsize=(5, 4))
             sns.barplot(
@@ -400,36 +402,51 @@ else:
                 edgecolor="black",
                 ax=ax_sum
             )
+
+            # Annotate each bar in millions
             for i, val in enumerate(sum_by_year.values):
+                text_position = val + (val * 0.01 if val != 0 else 1)
+                annotation_str = f"{val / 1_000_000:.1f}M"
                 ax_sum.text(
                     i,
-                    val + (val * 0.01 if val != 0 else 1),
-                    f"{val:,.0f}",
+                    text_position,
+                    annotation_str,
                     ha="center",
                     va="bottom",
                     color="black",
-                    fontsize=ANNOTATION_FONTSIZE  # <--- Using the variable
+                    fontsize=ANNOTATION_FONTSIZE
                 )
-            ax_sum.set_title("Total Money Raised by Year", fontsize=11)
-            ax_sum.set_xlabel("Year", fontsize=9)
-            ax_sum.set_ylabel("EUR (Sum of Money Raised)", fontsize=9)
-            ax_sum.set_ylim(0, sum_by_year.max() * 1.15 if sum_by_year.max() != 0 else 1)
+
+            # Label the axes
+            ax_sum.set_xlabel("Year", fontsize=AXIS_LABEL_FONTSIZE)
+            ax_sum.set_ylabel("EUR (millions)", fontsize=AXIS_LABEL_FONTSIZE)
+
+            # Format the y-axis ticks in millions
+            ax_sum.yaxis.set_major_formatter(
+                mticker.FuncFormatter(lambda x, pos: f"{x / 1_000_000:.0f}M")
+            )
+
+            # Adjust tick label font size
+            ax_sum.tick_params(axis='both', labelsize=TICK_LABEL_FONTSIZE)
+
+            max_val = sum_by_year.max()
+            ax_sum.set_ylim(0, max_val * 1.15 if max_val != 0 else 1)
             right_fr.pyplot(fig_sum)
     else:
-        right_fr.warning("No 'Year Announced' or 'Money Raised' columns found.")
+        right_fr.warning("No 'Year Announced' or 'Money Raised' column.")
 
     st.write("---")
 
-    # 4) Organization Location & Recent Funding Rounds
+    # Location & Recent Rounds
     loc_col, table_col = st.columns(2)
 
-    loc_col.subheader("Most Frequent Organization Location")
+    loc_col.subheader("Top Locations")
     if "Organization Location" not in filtered_funding.columns or filtered_funding["Organization Location"].dropna().empty:
-        loc_col.warning("No 'Organization Location' data in this range.")
+        loc_col.warning("No location data in range.")
     else:
         loc_counts = filtered_funding["Organization Location"].value_counts().head(10)
         if loc_counts.empty:
-            loc_col.warning("No valid Organization Location found.")
+            loc_col.warning("No locations found.")
         else:
             loc_df = pd.DataFrame({"Location": loc_counts.index, "Count": loc_counts.values})
             fig_loc, ax_loc = plt.subplots(figsize=(6, 4))
@@ -448,14 +465,14 @@ else:
                     str(int(row["Count"])),
                     va="center",
                     color="black",
-                    fontsize=ANNOTATION_FONTSIZE  # <--- Using the variable
+                    fontsize=ANNOTATION_FONTSIZE
                 )
-            ax_loc.set_title("Organization Location (Top 10)", fontsize=12)
-            ax_loc.set_xlabel("Count", fontsize=10)
-            ax_loc.set_ylabel("")
+            ax_loc.set_xlabel("Count", fontsize=AXIS_LABEL_FONTSIZE)
+            ax_loc.set_ylabel("", fontsize=AXIS_LABEL_FONTSIZE)
+            ax_loc.tick_params(axis='both', labelsize=TICK_LABEL_FONTSIZE)
             loc_col.pyplot(fig_loc)
 
-    table_col.subheader("10 Most Recent Funding Rounds")
+    table_col.subheader("Recent Rounds")
     if "Announced Date" in filtered_funding.columns:
         recent_rounds = (
             filtered_funding.dropna(subset=["Announced Date"])
@@ -473,7 +490,7 @@ else:
         existing_cols = [c for c in columns_to_show if c in recent_rounds.columns]
         table_col.dataframe(recent_rounds[existing_cols])
     else:
-        table_col.warning("No 'Announced Date' column found. Cannot show recent funding rounds.")
+        table_col.warning("No 'Announced Date' to show recent rounds.")
 
     st.write("---")
 
@@ -481,25 +498,27 @@ else:
     #               INVESTOR ANALYSIS (Seed/Early Stage)                #
     #####################################################################
 
-    st.write("### Investor Analysis (Only Seed & Early Stage)")
+    st.write("### Investor Analysis")
 
     if "Investor Names" not in filtered_funding.columns:
-        st.warning("No 'Investor Names' column found in the dataset.")
+        st.warning("No 'Investor Names' column in dataset.")
     else:
-        # Gather all investor names across all rows, splitting by comma
+        # Gather all investor names
         all_investors = []
         for val in filtered_funding["Investor Names"].dropna():
             investors_list = [inv.strip() for inv in val.split(",") if inv.strip()]
             all_investors.extend(investors_list)
 
         if not all_investors:
-            st.warning("No valid investor names found in 'Investor Names' column.")
+            st.warning("No valid investor names found.")
         else:
-            # 1) TOP 10 MOST ACTIVE INVESTORS
             colInv1, colInv2 = st.columns(2)
 
+            # -------------------
+            # Top Investors (Count)
+            # -------------------
             with colInv1:
-                st.write("#### Top 10 Most Active Investors")
+                st.subheader("Top Investors (Count)")
                 investor_counts = Counter(all_investors)
                 top10_investors = investor_counts.most_common(10)
                 df_top10_count = pd.DataFrame(top10_investors, columns=["Investor", "Count"])
@@ -520,31 +539,29 @@ else:
                         str(row["Count"]),
                         va="center",
                         color="black",
-                        fontsize=ANNOTATION_FONTSIZE  # <--- Using the variable
+                        fontsize=ANNOTATION_FONTSIZE
                     )
-                ax_i1.set_xlabel("Number of Rounds Participated")
-                ax_i1.set_ylabel("")
-                ax_i1.set_title("Most Active Investors (Seed/Early Stage)", fontsize=11)
+                ax_i1.set_xlabel("Rounds", fontsize=AXIS_LABEL_FONTSIZE)
+                ax_i1.set_ylabel("", fontsize=AXIS_LABEL_FONTSIZE)
+                ax_i1.tick_params(axis='both', labelsize=TICK_LABEL_FONTSIZE)
                 colInv1.pyplot(fig_i1)
 
-            # 2) TOP 10 INVESTORS BY TOTAL MONEY RAISED
+            # ------------------
+            # Top Investors (EUR) in Millions
+            # ------------------
             with colInv2:
-                st.write("#### Top 10 Investors by Total Money Raised")
+                st.subheader("Top Investors (EUR)")
                 investor_money = defaultdict(float)
 
-                # Sum 'Money Raised' for each round among the row's investors
+                # Sum 'Money Raised' for each round among that row's investors
                 for idx, row in filtered_funding.dropna(subset=["Investor Names"]).iterrows():
                     money_raised = row["Money Raised"] if not pd.isna(row["Money Raised"]) else 0.0
                     i_list = [inv.strip() for inv in row["Investor Names"].split(",") if inv.strip()]
                     for inv in i_list:
                         investor_money[inv] += money_raised
 
-                # Sort by total money descending, get top 10
-                sorted_investors = sorted(
-                    investor_money.items(),
-                    key=lambda x: x[1],
-                    reverse=True
-                )
+                # Sort and get top 10
+                sorted_investors = sorted(investor_money.items(), key=lambda x: x[1], reverse=True)
                 top10_by_money = sorted_investors[:10]
                 df_top10_money = pd.DataFrame(top10_by_money, columns=["Investor", "TotalMoney"])
 
@@ -557,20 +574,37 @@ else:
                     edgecolor="black",
                     ax=ax_i2
                 )
+
+                # Annotate each bar in millions
                 for i, row in df_top10_money.iterrows():
+                    text_position = row["TotalMoney"] + (row["TotalMoney"] * 0.01 if row["TotalMoney"] != 0 else 1)
+                    # Convert the numeric value to millions (e.g., "5.2M")
+                    annotation_str = f"{row['TotalMoney'] / 1_000_000:.1f}M"
                     ax_i2.text(
                         i,
-                        row["TotalMoney"] + (row["TotalMoney"] * 0.01 if row["TotalMoney"] != 0 else 1),
-                        f"{row['TotalMoney']:,.0f}",
+                        text_position,
+                        annotation_str,
                         ha="center",
                         va="bottom",
                         color="black",
-                        fontsize=ANNOTATION_FONTSIZE  # <--- Using the variable
+                        fontsize=ANNOTATION_FONTSIZE
                     )
-                ax_i2.set_xlabel("Investor")
-                ax_i2.set_ylabel("Sum of Money Raised")
-                ax_i2.set_title("Top 10 Investors by Total Money (Seed/Early)", fontsize=11)
+
+                # Label the axes
+                ax_i2.set_xlabel("Investor", fontsize=AXIS_LABEL_FONTSIZE)
+                ax_i2.set_ylabel("EUR (millions)", fontsize=AXIS_LABEL_FONTSIZE)
+
+                # Format the y-axis ticks in millions
+                ax_i2.yaxis.set_major_formatter(
+                    mticker.FuncFormatter(lambda x, pos: f"{x / 1_000_000:.0f}M")
+                )
+
+                # Rotate x-axis labels if needed
                 plt.setp(ax_i2.get_xticklabels(), rotation=45, ha="right")
+
+                # Adjust tick label font size
+                ax_i2.tick_params(axis='both', labelsize=TICK_LABEL_FONTSIZE)
+
                 colInv2.pyplot(fig_i2)
 
 st.sidebar.write("Use the year range slider to explore different time periods.")
