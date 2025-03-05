@@ -564,7 +564,7 @@ else:
                 colInv1.pyplot(fig_i1)
 
             with colInv2:
-                st.subheader("Top Investors (EUR)")
+                st.subheader("Top Investors (Sum of Total Round Sizes in EUR)")
                 investor_money = defaultdict(float)
 
                 for idx, row_ in filtered_funding.dropna(subset=["Investor Names"]).iterrows():
