@@ -43,19 +43,15 @@ def merge_territory_files() -> str:
     if missing_files:
         st.error(f"The following Territory files are missing: {missing_files}")
         st.stop()
-
     dfs = [pd.read_csv(file) for file in territory_files]
     combined_df = pd.concat(dfs, ignore_index=True, sort=False)
-
     territory_duplicates = combined_df.duplicated().sum()
     if territory_duplicates > 0:
         st.warning(f"Found {territory_duplicates} duplicate row(s) in Territory data. They will be dropped.")
-
     combined_df.drop_duplicates(inplace=True)
     output_file = "Territory_2016_2025_merged.csv"
     combined_df.to_csv(output_file, index=False)
     return output_file
-
 
 @st.cache_data
 def merge_funding_rounds_files() -> str:
@@ -64,14 +60,11 @@ def merge_funding_rounds_files() -> str:
     if missing_files:
         st.error(f"The following Funding Rounds files are missing: {missing_files}")
         st.stop()
-
     dfs = [pd.read_csv(file) for file in funding_rounds_files]
     combined_df = pd.concat(dfs, ignore_index=True, sort=False)
-
     funding_duplicates = combined_df.duplicated().sum()
     if funding_duplicates > 0:
         st.warning(f"Found {funding_duplicates} duplicate row(s) in Funding Rounds data. They will be dropped.")
-
     combined_df.drop_duplicates(inplace=True)
     output_file = "FundingRounds_2016_2025_merged.csv"
     combined_df.to_csv(output_file, index=False)
@@ -92,20 +85,14 @@ def unify_city_only_before_comma(location_str: str) -> str:
     """
     if pd.isna(location_str) or not isinstance(location_str, str) or not location_str.strip():
         return location_str
-
     city = location_str.split(",")[0].strip()
     city_lower = city.lower()
-
     if city_lower in ["köln", "cologne"]:
         return "Cologne"
-
-    aachen_cities = {
-        "herzogenrath", "würselen", "simmerath", "monschau", "roetgen",
-        "stolberg", "eschweiler", "alsdorf", "baesweiler", "aachen"
-    }
+    aachen_cities = {"herzogenrath", "würselen", "simmerath", "monschau", "roetgen",
+                     "stolberg", "eschweiler", "alsdorf", "baesweiler", "aachen"}
     if city_lower in aachen_cities:
         return "Region Aachen"
-
     return city
 
 ################################################################################
@@ -118,25 +105,18 @@ def load_territory_data(path: str) -> pd.DataFrame:
     if not os.path.exists(path):
         st.error(f"Territory file not found: {path}")
         return pd.DataFrame()
-
     df = pd.read_csv(path)
     df["Founded Date"] = pd.to_datetime(df["Founded Date"], format="%Y-%m-%d", errors="coerce")
     df.dropna(subset=["Founded Date"], inplace=True)
     df["Year Founded"] = df["Founded Date"].dt.year
-
     if "Total Funding Amount" in df.columns:
-        df["Total Funding Amount"] = (
-            df["Total Funding Amount"]
-            .replace(r"[^0-9.]", "", regex=True)
-            .replace("", float("nan"))
-            .astype(float, errors="ignore")
-        )
-
+        df["Total Funding Amount"] = (df["Total Funding Amount"]
+                                      .replace(r"[^0-9.]", "", regex=True)
+                                      .replace("", float("nan"))
+                                      .astype(float, errors="ignore"))
     if "Headquarters Location" in df.columns:
         df["Headquarters Location"] = df["Headquarters Location"].apply(unify_city_only_before_comma)
-
     return df
-
 
 @st.cache_data
 def load_funding_data(path: str) -> pd.DataFrame:
@@ -146,30 +126,22 @@ def load_funding_data(path: str) -> pd.DataFrame:
     if not os.path.exists(path):
         st.warning(f"Funding Rounds file not found: {path}")
         return pd.DataFrame()
-
     df = pd.read_csv(path)
-
     if "Announced Date" in df.columns:
         df["Announced Date"] = pd.to_datetime(df["Announced Date"], errors="coerce")
         df.dropna(subset=["Announced Date"], inplace=True)
         df["Year Announced"] = df["Announced Date"].dt.year
-
     if "Money Raised" in df.columns:
-        df["Money Raised"] = (
-            df["Money Raised"]
-            .replace(r"[^0-9.]", "", regex=True)
-            .replace("", float("nan"))
-            .astype(float, errors="ignore")
-        )
+        df["Money Raised"] = (df["Money Raised"]
+                              .replace(r"[^0-9.]", "", regex=True)
+                              .replace("", float("nan"))
+                              .astype(float, errors="ignore"))
     else:
         df["Money Raised"] = float("nan")
-
     if "Funding Stage" not in df.columns:
         df["Funding Stage"] = "Unknown"
-
     if "Organization Location" in df.columns:
         df["Organization Location"] = df["Organization Location"].apply(unify_city_only_before_comma)
-
     return df
 
 ################################################################################
@@ -182,8 +154,7 @@ def gradient_palette(n, color1="#822723", color2="#545465"):
     """
     c1 = mcolors.to_rgb(color1)
     c2 = mcolors.to_rgb(color2)
-    colors = [mcolors.to_hex(c) for c in np.linspace(c1, c2, n)]
-    return colors
+    return [mcolors.to_hex(c) for c in np.linspace(c1, c2, n)]
 
 sns.set_theme(style="whitegrid")
 ANNOTATION_FONTSIZE = 7
@@ -218,36 +189,59 @@ max_year = int(max(combined_years))
 ################################################################################
 
 LOGO_PATH = "tvf_logo.png"  # Adjust for your logo path
-
 top_left, top_right = st.columns([0.8, 0.2])
 with top_left:
     st.title("TVF Territory & Funding Dashboard")
 with top_right:
     st.image(LOGO_PATH, use_container_width=True)
 
+# ------------------------------------------------------------------------------
+# SIDEBAR FILTERS
+# ------------------------------------------------------------------------------
+
+# Sidebar – Year range slider
 st.sidebar.title("Select Year Range")
-selected_year_range = st.sidebar.slider(
-    "Choose a range of years",
-    min_value=min_year,
-    max_value=max_year,
-    value=(min_year, max_year)
-)
+selected_year_range = st.sidebar.slider("Choose a range of years", min_value=min_year, max_value=max_year, value=(min_year, max_year))
 
-filtered_territory = territory_df[
-    territory_df["Year Founded"].between(selected_year_range[0], selected_year_range[1])
-]
+# Sidebar – Interactive Industry Filter (with "All Industries" option)
+industry_options = sorted(set([ind.strip() for group in territory_df["Industry Groups"].dropna().astype(str)
+                               for ind in group.split(",")]))
+industry_options = ["All Industries"] + industry_options
+selected_industries = st.sidebar.multiselect("Select Industry Groups", industry_options, default=["All Industries"])
 
-filtered_funding = funding_df[
-    (funding_df["Year Announced"].between(selected_year_range[0], selected_year_range[1]))
-    & (funding_df["Funding Stage"].isin(["Seed", "Early Stage Funding"]))
+# Filter Territory data by year founded and industry
+filtered_territory = territory_df[territory_df["Year Founded"].between(selected_year_range[0], selected_year_range[1])]
+if "All Industries" not in selected_industries:
+    filtered_territory = filtered_territory[filtered_territory["Industry Groups"].apply(
+        lambda x: any(ind in [g.strip() for g in x.split(",")] for ind in selected_industries) if isinstance(x, str) else False
+    )]
+
+# ------------------------------------------------------------------------------
+# For Funding, merge with Territory to bring in Industry info (if available)
+# ------------------------------------------------------------------------------
+if "Organization Name" in territory_df.columns and "Organization Name" in funding_df.columns:
+    merged_funding = pd.merge(funding_df, territory_df[["Organization Name", "Industry Groups"]],
+                              on="Organization Name", how="left")
+else:
+    merged_funding = funding_df.copy()
+
+# Filter Funding data by year announced and funding stage
+filtered_funding = merged_funding[
+    (merged_funding["Year Announced"].between(selected_year_range[0], selected_year_range[1])) &
+    (merged_funding["Funding Stage"].isin(["Seed", "Early Stage Funding"]))
     ]
+
+# Then, filter funding by industry if needed (using the merged Industry Groups column)
+if "All Industries" not in selected_industries:
+    filtered_funding = filtered_funding[filtered_funding["Industry Groups"].apply(
+        lambda x: any(ind in [g.strip() for g in x.split(",")] for ind in selected_industries) if isinstance(x, str) else False
+    )]
 
 ################################################################################
 #                    TERRITORY DASHBOARD SECTIONS                              #
 ################################################################################
 
 st.subheader("Territory Data")
-
 total_companies = filtered_territory.shape[0]
 if "Headquarters Location" in filtered_territory.columns:
     is_region_aachen = filtered_territory["Headquarters Location"].eq("Region Aachen")
@@ -278,8 +272,8 @@ tile_colors = ["#822723", "#822723", "#822723", "#822723"]
 def colored_tile(column, label, value, bg_color):
     column.markdown(f"""
     <div style="background-color:{bg_color}; padding:10px; border-radius:10px; text-align:center;">
-        <h4 style="color:white; margin:0; font-size:14px;">{label}</h4>
-        <p style="color:white; font-size:18px; font-weight:bold; margin:0;">{value}</p>
+      <h4 style="color:white; margin:0; font-size:14px;">{label}</h4>
+      <p style="color:white; font-size:18px; font-weight:bold; margin:0;">{value}</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -346,11 +340,52 @@ else:
 st.write("---")
 
 ################################################################################
-#                     FUNDING ROUNDS DASHBOARD                                 #
+#        FUNDING TREND ANALYSIS (SCATTER & LINE CHARTS)                       #
+################################################################################
+
+st.subheader("Funding Trend Analysis")
+
+col_scatter, col_line = st.columns(2)
+
+with col_scatter:
+    st.subheader("Funding Amount vs Year Announced")
+    if filtered_funding.empty:
+        st.warning("No funding data available.")
+    else:
+        fig_scatter, ax_scatter = plt.subplots(figsize=(6, 4))
+        color_red = gradient_palette(1)[0]
+        sns.regplot(data=filtered_funding, x="Year Announced", y="Money Raised",
+                    scatter_kws={'alpha': 0.5, 'color': color_red},
+                    color=color_red, ax=ax_scatter)
+        ax_scatter.set_title("Funding Amount vs Year Announced", fontsize=AXIS_LABEL_FONTSIZE)
+        ax_scatter.set_xlabel("Year Announced", fontsize=AXIS_LABEL_FONTSIZE)
+        ax_scatter.set_ylabel("Money Raised", fontsize=AXIS_LABEL_FONTSIZE)
+        ax_scatter.tick_params(axis='both', labelsize=TICK_LABEL_FONTSIZE)
+        ax_scatter.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, pos: f"{x/1_000_000:.0f}M"))
+        col_scatter.pyplot(fig_scatter)
+
+with col_line:
+    st.subheader("Average Round Size Trend")
+    if filtered_funding.empty:
+        st.warning("No funding data available.")
+    else:
+        avg_round_size = filtered_funding.groupby("Year Announced")["Money Raised"].mean().reset_index()
+        fig_line, ax_line = plt.subplots(figsize=(6, 4))
+        sns.lineplot(data=avg_round_size, x="Year Announced", y="Money Raised", marker="o", ax=ax_line, color=gradient_palette(1)[0])
+        ax_line.set_title("Average Round Size per Year", fontsize=AXIS_LABEL_FONTSIZE)
+        ax_line.set_xlabel("Year Announced", fontsize=AXIS_LABEL_FONTSIZE)
+        ax_line.set_ylabel("Average Money Raised", fontsize=AXIS_LABEL_FONTSIZE)
+        ax_line.tick_params(axis='both', labelsize=TICK_LABEL_FONTSIZE)
+        ax_line.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, pos: f"{x/1_000_000:.0f}M"))
+        col_line.pyplot(fig_line)
+
+st.write("---")
+
+################################################################################
+#                     FUNDING ROUNDS DASHBOARD                                  #
 ################################################################################
 
 st.subheader("Funding Rounds (Seed & Early)")
-
 if filtered_funding.empty:
     st.warning("No seed/early rounds in the selected year range.")
 else:
@@ -489,7 +524,7 @@ else:
                 ax_i1.tick_params(axis='both', labelsize=TICK_LABEL_FONTSIZE)
                 colInv1.pyplot(fig_i1)
             with colInv2:
-                st.subheader("Top Investors (Sum of Round Sizes participated, in EUR)")
+                st.subheader("Top Investors (Sum of Round Sizes, in EUR)")
                 investor_money = defaultdict(float)
                 for idx, row_ in filtered_funding.dropna(subset=["Investor Names"]).iterrows():
                     money_raised = row_["Money Raised"] if not pd.isna(row_["Money Raised"]) else 0.0
@@ -508,8 +543,8 @@ else:
                     val = row_["TotalMoney"]
                     text_pos = val + (val * 0.01 if val != 0 else 1)
                     ann_str = f"{val / 1_000_000:.1f}M"
-                    ax_i2.text(i, text_pos, ann_str, ha="center", va="bottom",
-                               color="black", fontsize=ANNOTATION_FONTSIZE)
+                    ax_i2.text(i, text_pos, ann_str,
+                               ha="center", va="bottom", color="black", fontsize=ANNOTATION_FONTSIZE)
                 ax_i2.set_xlabel("Investor", fontsize=AXIS_LABEL_FONTSIZE)
                 ax_i2.set_ylabel("EUR (millions)", fontsize=AXIS_LABEL_FONTSIZE)
                 ax_i2.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, pos: f"{x/1_000_000:.0f}M"))
@@ -517,4 +552,55 @@ else:
                 ax_i2.tick_params(axis='both', labelsize=TICK_LABEL_FONTSIZE)
                 colInv2.pyplot(fig_i2)
 
-st.sidebar.write("Use the year range slider to explore different time periods.")
+st.write("---")
+
+################################################################################
+#         Additional VC Analysis: Two Visualizations Side by Side             #
+################################################################################
+
+col_vc1, col_vc2 = st.columns(2)
+
+with col_vc1:
+    st.subheader("Rounds by Funding Type (Stacked by Year)")
+    if "Funding Type" in filtered_funding.columns:
+        # Group rounds by Year Announced and Funding Type
+        grouped_rounds = filtered_funding.groupby(["Year Announced", "Funding Type"]).size().unstack(fill_value=0)
+        fig_rounds, ax_rounds = plt.subplots(figsize=(8, 6))
+        # Apply our color scheme based on the number of funding types
+        colors = gradient_palette(grouped_rounds.shape[1])
+        grouped_rounds.plot(kind='bar', stacked=True, ax=ax_rounds, color=colors)
+        ax_rounds.set_title("Rounds by Funding Type per Year", fontsize=AXIS_LABEL_FONTSIZE)
+        ax_rounds.set_xlabel("Year Announced", fontsize=AXIS_LABEL_FONTSIZE)
+        ax_rounds.set_ylabel("Number of Rounds", fontsize=AXIS_LABEL_FONTSIZE)
+        ax_rounds.tick_params(axis='both', labelsize=TICK_LABEL_FONTSIZE)
+        st.pyplot(fig_rounds)
+    else:
+        st.warning("No 'Funding Type' column found in funding data.")
+
+with col_vc2:
+    st.subheader("Top Lead Investors (Count)")
+    if "Lead Investors" in filtered_funding.columns:
+        lead_list = []
+        for val in filtered_funding["Lead Investors"].dropna():
+            if isinstance(val, str):
+                lead_list.extend([inv.strip() for inv in val.split(",") if inv.strip()])
+        if not lead_list:
+            st.warning("No valid lead investor names found.")
+        else:
+            top_leads = Counter(lead_list).most_common(10)
+            df_top_leads = pd.DataFrame(top_leads, columns=["Lead Investor", "Count"])
+            num_bars = df_top_leads.shape[0]
+            fig_lead_count, ax_lead_count = plt.subplots(figsize=(6, 4))
+            sns.barplot(data=df_top_leads, y="Lead Investor", x="Count",
+                        palette=gradient_palette(num_bars),
+                        edgecolor="black", ax=ax_lead_count)
+            for i, row in df_top_leads.iterrows():
+                ax_lead_count.text(row["Count"] + 0.1, i, str(row["Count"]), va="center", color="black", fontsize=ANNOTATION_FONTSIZE)
+            ax_lead_count.set_xlabel("Count", fontsize=AXIS_LABEL_FONTSIZE)
+            ax_lead_count.set_ylabel("", fontsize=AXIS_LABEL_FONTSIZE)
+            ax_lead_count.tick_params(axis='both', labelsize=TICK_LABEL_FONTSIZE)
+            st.pyplot(fig_lead_count)
+    else:
+        st.warning("No 'Lead Investors' column found in funding data.")
+
+st.sidebar.write("Use the year range slider and industry filter to explore different time periods and sectors.")
