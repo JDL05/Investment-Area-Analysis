@@ -200,7 +200,7 @@ with top_right:
 # ------------------------------------------------------------------------------
 
 # Sidebar – Year range slider
-st.sidebar.title("Select Year Range")
+st.sidebar.title("Filter")
 selected_year_range = st.sidebar.slider("Choose a range of years", min_value=min_year, max_value=max_year, value=(min_year, max_year))
 
 # Sidebar – Interactive Industry Filter (with "All Industries" option)
