@@ -438,8 +438,8 @@ else:
     else:
         left_fr.warning("No 'Year Announced' column found in funding data.")
 
-    # Money by Year (millions)
-    right_fr.subheader("Money by Year")
+    # Investment by Year (millions)
+    right_fr.subheader("Investment by Year")
     if "Year Announced" in filtered_funding.columns:
         sum_by_year = filtered_funding.groupby("Year Announced")["Money Raised"].sum().sort_index()
         if sum_by_year.empty:
