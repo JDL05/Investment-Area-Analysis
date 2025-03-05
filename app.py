@@ -9,6 +9,7 @@ import numpy as np
 import matplotlib.colors as mcolors
 
 # ------------------------------------------------------------------------------
+# 1) Must be the FIRST Streamlit command:
 st.set_page_config(layout="wide", page_title="TVF Territory Dashboard + Merged Funding")
 # ------------------------------------------------------------------------------
 
@@ -27,7 +28,8 @@ territory_files = [
 # FUNDING ROUNDS (Investments) files to merge
 funding_rounds_files = [
     "FundingRounds_2016_2025.csv",
-    "FundingRounds_2016_2025_BE.csv"
+    "FundingRounds_2016_2025_BE.csv",
+    "FundingRounds_2016_2025_Small.csv"
 ]
 
 ################################################################################
@@ -42,8 +44,17 @@ def merge_territory_files() -> str:
         st.error(f"The following Territory files are missing: {missing_files}")
         st.stop()
 
+    # Read and concatenate
     dfs = [pd.read_csv(file) for file in territory_files]
-    combined_df = pd.concat(dfs, ignore_index=True, sort=False).drop_duplicates()
+    combined_df = pd.concat(dfs, ignore_index=True, sort=False)
+
+    # Count duplicates before dropping
+    territory_duplicates = combined_df.duplicated().sum()
+    if territory_duplicates > 0:
+        st.warning(f"Found {territory_duplicates} duplicate row(s) in Territory data. They will be dropped.")
+
+    # Drop duplicates
+    combined_df.drop_duplicates(inplace=True)
 
     output_file = "Territory_2016_2025_merged.csv"
     combined_df.to_csv(output_file, index=False)
@@ -52,13 +63,23 @@ def merge_territory_files() -> str:
 
 @st.cache_data
 def merge_funding_rounds_files() -> str:
+    """Merge multiple Funding Rounds CSV files into one, return the output CSV path."""
     missing_files = [file for file in funding_rounds_files if not os.path.exists(file)]
     if missing_files:
         st.error(f"The following Funding Rounds files are missing: {missing_files}")
         st.stop()
 
+    # Read and concatenate
     dfs = [pd.read_csv(file) for file in funding_rounds_files]
-    combined_df = pd.concat(dfs, ignore_index=True, sort=False).drop_duplicates()
+    combined_df = pd.concat(dfs, ignore_index=True, sort=False)
+
+    # Count duplicates before dropping
+    funding_duplicates = combined_df.duplicated().sum()
+    if funding_duplicates > 0:
+        st.warning(f"Found {funding_duplicates} duplicate row(s) in Funding Rounds data. They will be dropped.")
+
+    # Drop duplicates
+    combined_df.drop_duplicates(inplace=True)
 
     output_file = "FundingRounds_2016_2025_merged.csv"
     combined_df.to_csv(output_file, index=False)
@@ -71,17 +92,21 @@ def merge_funding_rounds_files() -> str:
 
 @st.cache_data
 def load_territory_data(path: str) -> pd.DataFrame:
+    """Load and process the merged Territory dataset."""
     if not os.path.exists(path):
         st.error(f"Territory file not found: {path}")
         return pd.DataFrame()
 
     df = pd.read_csv(path)
 
+    # Convert 'Founded Date' to datetime
     df["Founded Date"] = pd.to_datetime(df["Founded Date"], format="%Y-%m-%d", errors="coerce")
     df.dropna(subset=["Founded Date"], inplace=True)
 
+    # Extract year
     df["Year Founded"] = df["Founded Date"].dt.year
 
+    # Clean up 'Total Funding Amount' to numeric
     if "Total Funding Amount" in df.columns:
         df["Total Funding Amount"] = (
             df["Total Funding Amount"]
@@ -94,17 +119,22 @@ def load_territory_data(path: str) -> pd.DataFrame:
 
 @st.cache_data
 def load_funding_data(path: str) -> pd.DataFrame:
+    """
+    Load the merged Funding Rounds CSV, parse columns, unify city names, etc.
+    """
     if not os.path.exists(path):
         st.warning(f"Funding Rounds file not found: {path}")
         return pd.DataFrame()
 
     df = pd.read_csv(path)
 
+    # Convert 'Announced Date' to datetime
     if "Announced Date" in df.columns:
         df["Announced Date"] = pd.to_datetime(df["Announced Date"], errors="coerce")
         df.dropna(subset=["Announced Date"], inplace=True)
         df["Year Announced"] = df["Announced Date"].dt.year
 
+    # Convert "Money Raised" to float
     if "Money Raised" in df.columns:
         df["Money Raised"] = (
             df["Money Raised"]
@@ -115,9 +145,11 @@ def load_funding_data(path: str) -> pd.DataFrame:
     else:
         df["Money Raised"] = float("nan")
 
+    # Ensure "Funding Stage" column
     if "Funding Stage" not in df.columns:
         df["Funding Stage"] = "Unknown"
 
+    # Normalize city names in "Organization Location"
     if "Organization Location" in df.columns:
         def unify_city(location_str):
             if pd.isna(location_str):
@@ -140,6 +172,9 @@ def load_funding_data(path: str) -> pd.DataFrame:
 ################################################################################
 
 def gradient_palette(n, color1="#822723", color2="#545465"):
+    """
+    Generates a palette of `n` gradient steps going from color1 to color2.
+    """
     c1 = mcolors.to_rgb(color1)
     c2 = mcolors.to_rgb(color2)
     colors = [
@@ -147,8 +182,10 @@ def gradient_palette(n, color1="#822723", color2="#545465"):
     ]
     return colors
 
+# Set Seaborn theme
 sns.set_theme(style="whitegrid")
 
+# Font-size controls
 ANNOTATION_FONTSIZE = 7
 AXIS_LABEL_FONTSIZE = 7
 TICK_LABEL_FONTSIZE = 7
@@ -157,16 +194,20 @@ TICK_LABEL_FONTSIZE = 7
 #                      MERGE & LOAD MAIN LOGIC                                 #
 ################################################################################
 
+# Merge territory files -> load territory_df
 merged_territory_file = merge_territory_files()
 territory_df = load_territory_data(merged_territory_file)
 
+# Merge funding rounds files -> load funding_df
 merged_funding_file = merge_funding_rounds_files()
 funding_df = load_funding_data(merged_funding_file)
 
+# Basic validation
 if territory_df.empty or territory_df["Year Founded"].isna().all():
     st.error("No valid 'Territory' data after merging. Please check your CSV files.")
     st.stop()
 
+# Collect all possible years
 all_territory_years = territory_df["Year Founded"].dropna().unique()
 all_funding_years = funding_df["Year Announced"].dropna().unique() if not funding_df.empty else []
 combined_years = list(set(all_territory_years).union(set(all_funding_years)))
@@ -183,12 +224,15 @@ max_year = int(max(combined_years))
 
 LOGO_PATH = "tvf_logo.png"  # Adjust for your logo path
 
+# Top layout: Title on left, Logo on right
 top_left, top_right = st.columns([0.8, 0.2])
 with top_left:
     st.title("TVF Territory & Funding Dashboard")
 with top_right:
     st.image(LOGO_PATH, use_container_width=True)
 
+
+# Sidebar filter
 st.sidebar.title("Select Year Range")
 selected_year_range = st.sidebar.slider(
     "Choose a range of years",
@@ -197,10 +241,12 @@ selected_year_range = st.sidebar.slider(
     value=(min_year, max_year)
 )
 
+# Filter territory by chosen years
 filtered_territory = territory_df[
     territory_df["Year Founded"].between(selected_year_range[0], selected_year_range[1])
 ]
 
+# Filter funding by chosen years + stage
 filtered_funding = funding_df[
     (funding_df["Year Announced"].between(selected_year_range[0], selected_year_range[1]))
     & (funding_df["Funding Stage"].isin(["Seed", "Early Stage Funding"]))
@@ -564,7 +610,7 @@ else:
                 colInv1.pyplot(fig_i1)
 
             with colInv2:
-                st.subheader("Top Investors (Sum of Total Round Sizes in EUR)")
+                st.subheader("Top Investors (EUR)")
                 investor_money = defaultdict(float)
 
                 for idx, row_ in filtered_funding.dropna(subset=["Investor Names"]).iterrows():
