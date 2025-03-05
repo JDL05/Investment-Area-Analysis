@@ -4,7 +4,7 @@ import os
 import matplotlib.pyplot as plt
 import seaborn as sns
 from collections import Counter, defaultdict
-import matplotlib.ticker as mticker  # For custom y-axis formatting in millions
+import matplotlib.ticker as mticker  
 import numpy as np
 import matplotlib.colors as mcolors
 
